@@ -1,82 +1,46 @@
 
-import employeeRepository
-  from "../repositories/employee.repository";
+import employeeRepository from "../repositories/employee.repository";
 
 import type {
   EmployeeListQuery,
   EmployeeUpdatePayload,
 } from "../types/employee.types";
 
-
 // ============================================================
 // EMPLOYEE SERVICE
 // ============================================================
 
 class EmployeeService {
-
-
-  /* ============================================================
-     INITIALIZE
-  ============================================================ */
-
+  /**
+   * Memastikan tabel dan kolom kepegawaian tersedia.
+   */
   async initialize(): Promise<void> {
-
     await employeeRepository.ensureTable();
-
   }
 
-
-  /* ============================================================
-     GET ALL
-  ============================================================ */
-
-  async getAll(
-    query: EmployeeListQuery = {}
-  ) {
-
-    return employeeRepository.getAll(
-      query
-    );
-
+  /**
+   * Mengambil daftar karyawan dan ringkasan.
+   */
+  async getAll(query: EmployeeListQuery = {}) {
+    return employeeRepository.getAll(query);
   }
 
-
-  /* ============================================================
-     GET BY ID
-  ============================================================ */
-
-  async getById(
-    id: string
-  ) {
-
-    return employeeRepository.getById(
-      id
-    );
-
+  /**
+   * Mengambil detail karyawan berdasarkan ID.
+   */
+  async getById(id: string) {
+    return employeeRepository.getById(id);
   }
 
-
-  /* ============================================================
-     UPDATE
-  ============================================================ */
-
+  /**
+   * Memperbarui data kepegawaian.
+   */
   async update(
     id: string,
     payload: EmployeeUpdatePayload
   ) {
-
-    return employeeRepository.update(
-      id,
-      payload
-    );
-
+    return employeeRepository.update(id, payload);
   }
-
 }
-
-
-// ============================================================
-// EXPORT
-// ============================================================
 
 export default new EmployeeService();
