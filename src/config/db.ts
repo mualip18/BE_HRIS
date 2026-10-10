@@ -12,3 +12,5 @@ const pool = new Pool({
 });
 
 export default pool;
+
+// ini db local

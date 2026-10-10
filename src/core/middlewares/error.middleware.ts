@@ -47,7 +47,19 @@ export const errorHandler = (
   res: Response,
   next: NextFunction
 ) => {
-  console.error(err);
+  console.error('====================================');
+  console.error('API ERROR');
+  console.error('METHOD:', req.method);
+  console.error('URL:', req.originalUrl);
+  console.error('MESSAGE:', err?.message);
+  console.error('CODE:', err?.code);
+  console.error('DETAIL:', err?.detail);
+  console.error('HINT:', err?.hint);
+  console.error('TABLE:', err?.table);
+  console.error('COLUMN:', err?.column);
+  console.error('CONSTRAINT:', err?.constraint);
+  console.error('STACK:', err?.stack);
+  console.error('====================================');
 
   if (err instanceof AppError) {
     return res.status(err.statusCode).json({
@@ -58,6 +70,14 @@ export const errorHandler = (
 
   return res.status(500).json({
     success: false,
-    message: 'Internal Server Error',
+    message: err?.message || 'Internal Server Error',
+    error: {
+      code: err?.code || null,
+      detail: err?.detail || null,
+      hint: err?.hint || null,
+      table: err?.table || null,
+      column: err?.column || null,
+      constraint: err?.constraint || null,
+    },
   });
 };

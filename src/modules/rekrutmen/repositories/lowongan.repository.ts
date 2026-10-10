@@ -86,16 +86,15 @@ export class LowonganRepository {
     // =====================================================
 
     if (!filter?.show_all) {
+  query += `
+    AND l.is_active = TRUE
 
-      query += `
-        AND l.is_active = TRUE
-
-        AND (
-          l.deadline IS NULL
-          OR l.deadline > NOW()
-        )
-      `;
-    }
+    AND (
+      l.deadline IS NULL
+      OR l.deadline >= CURRENT_DATE
+    )
+  `;
+}
 
     // =====================================================
     // FILTER KATEGORI

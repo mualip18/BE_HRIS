@@ -22,121 +22,98 @@ import {
 // ======================================
 // ROLE CONSTANT
 // ======================================
+
 const ROLE = {
-
   ADMIN: 1,
-
-  HR: 2,
-
-  USER: 3,
-
-  EMPLOYEE: 4,
-
+  REKRUTMEN_ADMIN: 2,
+  EMPLOYEE: 3,
+  PRESENSI_ADMIN: 4,
 };
 
 
 // ======================================
 // ROLE MAPPING
 // ======================================
+
 const mapRole = (
-  role_id:number
+  role_id: number
 ) => {
 
-  switch(role_id){
+  switch (role_id) {
 
     case ROLE.ADMIN:
       return "admin";
 
-
-    case ROLE.HR:
-      return "hr";
-
-
-    case ROLE.USER:
-      return "user";
-
+    case ROLE.REKRUTMEN_ADMIN:
+      return "rekrutmen_admin";
 
     case ROLE.EMPLOYEE:
       return "employee";
 
+    case ROLE.PRESENSI_ADMIN:
+      return "presensi_admin";
 
     default:
       return "guest";
-
   }
 
 };
 
 
-
 // ======================================
 // REGISTER
 // ======================================
-export const register = async(
-  data:any
-)=>{
+
+export const register = async (
+  data: any
+) => {
 
   const existing =
     await repo.findUserByEmail(
       data.email
     );
 
-
-  if(existing){
-
+  if (existing) {
     throw new Error(
       "Email already used"
     );
-
   }
-
 
   const hashed =
     await hashPassword(
       data.password
     );
 
-
   const user =
     await repo.createUser({
-
       ...data,
-
-      password:hashed,
-
+      password: hashed,
     });
-
 
   return user;
 
 };
 
 
-
 // ======================================
 // LOGIN
 // ======================================
-export const login = async(
-  email:string,
-  password:string
-)=>{
 
+export const login = async (
+  email: string,
+  password: string
+) => {
 
   const user =
     await repo.findUserByEmail(
       email
     );
 
-
-  if(!user){
-
+  if (!user) {
     throw new Error(
       "User not found"
     );
-
   }
-
-
 
   const match =
     await comparePassword(
@@ -144,15 +121,11 @@ export const login = async(
       user.password
     );
 
-
-  if(!match){
-
+  if (!match) {
     throw new Error(
       "Wrong password"
     );
-
   }
-
 
 
   const role =
@@ -161,95 +134,105 @@ export const login = async(
     );
 
 
+  // ================================
+  // DEBUG ROLE
+  // ================================
 
+  console.log(
+    "=== LOGIN ROLE DEBUG ==="
+  );
+
+  console.log({
+    userId: user.id,
+    email: user.email,
+    roleId: user.role_id,
+    mappedRole: role,
+  });
+
+
+  // ================================
   // BELUM SETUP 2FA
-  if(
-    !user.two_factor_enabled
-  ){
+  // ================================
 
+  if (
+    !user.two_factor_enabled
+  ) {
 
     const data =
       await generate2FASecret(
         user.email
       );
 
-
     await repo.save2FASecret(
       user.uuid,
       data.secret
     );
-
 
     console.log(
       "LOGIN UUID:",
       user.uuid
     );
 
-
     return {
 
-      success:true,
+      success: true,
 
-      requires2FASetup:true,
+      requires2FASetup: true,
 
-      qrCode:data.qrCode,
+      qrCode:
+        data.qrCode,
 
-      userUuid:user.uuid,
+      userUuid:
+        user.uuid,
 
     };
 
   }
 
 
+  // ================================
+  // SUDAH SETUP 2FA
+  // ================================
 
   console.log(
     "LOGIN UUID:",
     user.uuid
   );
 
-
   return {
 
-    success:true,
+    success: true,
 
-    requiresOTP:true,
+    requiresOTP: true,
 
-    userUuid:user.uuid,
+    userUuid:
+      user.uuid,
 
   };
 
-
 };
-
-
 
 
 // ======================================
 // LOGIN WITH GOOGLE
 // ======================================
-export const loginWithGoogle =
-async(
-  googleToken:string
-)=>{
 
+export const loginWithGoogle = async (
+  googleToken: string
+) => {
 
   const googlePayload =
     await verifyGoogleToken(
       googleToken
     );
 
-
-
-  if(
+  if (
     !googlePayload.email
-  ){
-
+  ) {
     throw new Error(
       "Google email not found"
     );
-
   }
-
 
 
   let user =
@@ -258,10 +241,11 @@ async(
     );
 
 
-
+  // ================================
   // AUTO CREATE USER GOOGLE
-  if(!user){
+  // ================================
 
+  if (!user) {
 
     user =
       await repo.createGoogleUser({
@@ -270,25 +254,19 @@ async(
           googlePayload.name ||
           "Google User",
 
-
         email:
           googlePayload.email,
-
 
         avatar:
           googlePayload.picture,
 
-
-        // DEFAULT KARYAWAN
+        // DEFAULT EMPLOYEE
         role_id:
           ROLE.EMPLOYEE,
 
       });
 
-
   }
-
-
 
 
   const role =
@@ -297,60 +275,80 @@ async(
     );
 
 
+  // ================================
+  // DEBUG ROLE
+  // ================================
+
+  console.log(
+    "=== GOOGLE ROLE DEBUG ==="
+  );
+
+  console.log({
+
+    userId:
+      user.id,
+
+    email:
+      user.email,
+
+    roleId:
+      user.role_id,
+
+    mappedRole:
+      role,
+
+  });
+
 
   const token =
     generateToken({
 
-      id:user.uuid,
+      id:
+        user.uuid,
 
       role,
 
     });
 
 
-
   return {
 
-    success:true,
+    success: true,
 
+    user: {
 
-    user:{
+      id:
+        user.id,
 
-      id:user.id,
+      name:
+        user.name,
 
-      name:user.name,
-
-      email:user.email,
+      email:
+        user.email,
 
       role,
 
-
       avatar:
-        user.avatar || null,
+        user.avatar ||
+        null,
 
     },
 
-
     token,
-
 
   };
 
-
 };
-
-
 
 
 // ======================================
 // VERIFY OTP
 // ======================================
-export const verifyOTP =
-async(
-  userUuid:string,
-  otp:string
-)=>{
 
+export const verifyOTP = async (
+  userUuid: string,
+  otp: string
+) => {
 
   const user =
     await repo.findUserByUuid(
@@ -358,8 +356,7 @@ async(
     );
 
 
-
-  if(!user){
+  if (!user) {
 
     throw new Error(
       "User tidak ditemukan"
@@ -368,6 +365,9 @@ async(
   }
 
 
+  // ================================
+  // VERIFY OTP
+  // ================================
 
   const verified =
     verify2FACode(
@@ -376,8 +376,7 @@ async(
     );
 
 
-
-  if(!verified){
+  if (!verified) {
 
     throw new Error(
       "OTP tidak valid"
@@ -386,10 +385,13 @@ async(
   }
 
 
+  // ================================
+  // ENABLE 2FA
+  // ================================
 
-  if(
+  if (
     !user.two_factor_enabled
-  ){
+  ) {
 
     await repo.enable2FA(
       user.uuid
@@ -398,6 +400,9 @@ async(
   }
 
 
+  // ================================
+  // ROLE
+  // ================================
 
   const role =
     mapRole(
@@ -405,40 +410,71 @@ async(
     );
 
 
+  // ================================
+  // DEBUG ROLE
+  // ================================
+
+  console.log(
+    "=== OTP ROLE DEBUG ==="
+  );
+
+  console.log({
+
+    userId:
+      user.id,
+
+    email:
+      user.email,
+
+    roleId:
+      user.role_id,
+
+    mappedRole:
+      role,
+
+  });
+
+
+  // ================================
+  // GENERATE TOKEN
+  // ================================
 
   const token =
     generateToken({
 
-      id:user.uuid,
+      id:
+        user.uuid,
 
       role,
 
     });
 
 
+  // ================================
+  // RESPONSE
+  // ================================
 
   return {
 
-    success:true,
+    success: true,
 
+    user: {
 
-    user:{
+      id:
+        user.id,
 
-      id:user.id,
+      name:
+        user.name,
 
-      name:user.name,
-
-      email:user.email,
+      email:
+        user.email,
 
       role,
 
     },
 
-
     token,
 
-
   };
-
 
 };
