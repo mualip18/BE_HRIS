@@ -1,0 +1,13 @@
+PORT=3000
+
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=postgres
+DB_PASS=123456
+DB_NAME=hris_db
+
+JWT_SECRET=alif_secret
+
+# Google OAuth Configuration   ini evn local
+
+GOOGLE_CLIENT_ID=288306900403-nilg3lo8kerodbk2n283sk48oajg2hkt.apps.googleusercontent.com
