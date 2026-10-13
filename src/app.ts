@@ -4,71 +4,25 @@ import cors from "cors";
 import path from "path";
 
 import authRoutes from "./modules/auth/routes/auth.routes";
+import rekrutmenRoutes from "./modules/rekrutmen/routes/rekrutmen.routes";
+import profileRoutes from "./modules/profile/routes/profile.routes";
+import applyRoutes from "./modules/rekrutmen/routes/apply.routes";
+import testRoutes from "./modules/rekrutmen/test/routes/test.routes";
+import candidateTestRoutes from "./modules/rekrutmen/test/routes/candidate.routes";
 
-import rekrutmenRoutes
-  from "./modules/rekrutmen/routes/rekrutmen.routes";
+import { authMiddleware } from "./core/middlewares/auth.middleware";
+import { roleMiddleware } from "./core/middlewares/role.middleware";
 
-import profileRoutes
-  from "./modules/profile/routes/profile.routes";
+import candidateRoutes from "./modules/rekrutmen/routes/candidate.routes";
+import userMessageRoutes from "./modules/rekrutmen/routes/userMessage.routes";
+import employeeRoutes from "./modules/hris/routes/employee.routes";
 
-import applyRoutes
-  from "./modules/rekrutmen/routes/apply.routes";
+import whatsappRoutes from "./modules/notifications/whatsapp/whatsapp.routes";
+import presensiRoutes from "./modules/presensi/routes/presensi.routes";
+import settingsRoutes from "./modules/settings/routes/settings.routes";
 
-import testRoutes
-  from "./modules/rekrutmen/test/routes/test.routes";
-
-import candidateTestRoutes
-  from "./modules/rekrutmen/test/routes/candidate.routes";
-
-import {
-  authMiddleware,
-} from "./core/middlewares/auth.middleware";
-
-import {
-  roleMiddleware,
-} from "./core/middlewares/role.middleware";
-
-import candidateRoutes
-  from "./modules/rekrutmen/routes/candidate.routes";
-
-import userMessageRoutes
-  from "./modules/rekrutmen/routes/userMessage.routes";
-
-import employeeRoutes
-  from "./modules/hris/routes/employee.routes";
-
-/* ================================================================
-   WHATSAPP
-================================================================ */
-
-import whatsappRoutes
-  from "./modules/notifications/whatsapp/whatsapp.routes";
-
-/* ================================================================
-   PRESENSI
-================================================================ */
-
-import presensiRoutes
-  from "./modules/presensi/routes/presensi.routes";
-
-/* ================================================================
-   SETTINGS
-================================================================ */
-
-import settingsRoutes
-  from "./modules/settings/routes/settings.routes";
-
-import {
-  ROLES,
-} from "./core/constants/roles";
-
-/* ================================================================
-   ENV
-================================================================ */
-
-import {
-  env,
-} from "./config/env";
+import { ROLES } from "./core/constants/roles";
+import { env } from "./config/env";
 
 /* ================================================================
    APP
@@ -77,81 +31,45 @@ import {
 const app = express();
 
 /* ================================================================
-   DEBUG REQUEST
+   CORS CONFIGURATION
 ================================================================ */
 
-app.use(
-  (req, _res, next) => {
-    console.log(
-      "REQUEST:",
-      req.method,
-      req.originalUrl,
-      "ORIGIN:",
-      req.headers.origin
-    );
+// Origin frontend produksi dan frontend lokal.
+const defaultAllowedOrigins = [
+  "https://kariryadin.netlify.app",
+  "http://localhost:5173",
+];
 
-    next();
-  }
-);
-
-/* ================================================================
-   CORS
-================================================================ */
-
-// Diambil dari env.ALLOWED_ORIGINS (dipisah koma).
-// Fallback default tersedia di src/config/env.ts.
-
-const allowedOrigins = env.ALLOWED_ORIGINS
+// Origin tambahan dapat dikonfigurasi melalui Railway Variables.
+const configuredOrigins = (env.ALLOWED_ORIGINS || "")
   .split(",")
   .map((origin) => origin.trim())
   .filter((origin) => origin.length > 0);
 
-console.log(
-  "CORS ALLOWED ORIGINS:",
-  allowedOrigins
-);
+const allowedOrigins = [
+  ...new Set([
+    ...defaultAllowedOrigins,
+    ...configuredOrigins,
+  ]),
+];
 
-const corsOptions = {
-  origin: function (
-    origin: any,
-    callback: any
-  ) {
-    console.log(
-      "CORS CHECK ORIGIN:",
-      origin
-    );
+console.log("CORS ALLOWED ORIGINS:", allowedOrigins);
 
-    // Izinkan request tanpa Origin, misalnya server-to-server.
+const corsOptions: cors.CorsOptions = {
+  origin: (origin, callback) => {
+    // Izinkan request server-to-server atau tools tanpa Origin.
     if (!origin) {
-      return callback(
-        null,
-        true
-      );
+      return callback(null, true);
     }
 
-    if (
-      allowedOrigins.includes(origin)
-    ) {
-      console.log(
-        "CORS ALLOWED:",
-        origin
-      );
-
-      return callback(
-        null,
-        true
-      );
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
     }
 
-    console.log(
-      "CORS BLOCKED:",
-      origin
-    );
+    console.warn("CORS BLOCKED:", origin);
 
-    return callback(
-      null,
-      false
-    );
+    // Origin tidak dikenal tetap ditolak.
+    return callback(null, false);
   },
 
   credentials: true,
@@ -169,32 +87,35 @@ const corsOptions = {
     "Content-Type",
     "Authorization",
   ],
+
+  optionsSuccessStatus: 204,
 };
 
-/* ================================================================
-   CORS MIDDLEWARE
-================================================================ */
-
-app.use(
-  cors(corsOptions)
-);
+// Harus dipasang sebelum seluruh route API.
+// Middleware cors juga menangani preflight OPTIONS.
+app.use(cors(corsOptions));
 
 /* ================================================================
-   PREFLIGHT
+   DEBUG REQUEST
 ================================================================ */
 
-app.options(
-  "*",
-  cors(corsOptions)
-);
+app.use((req, _res, next) => {
+  console.log(
+    "REQUEST:",
+    req.method,
+    req.originalUrl,
+    "ORIGIN:",
+    req.headers.origin
+  );
+
+  next();
+});
 
 /* ================================================================
    BODY PARSER
 ================================================================ */
 
-app.use(
-  express.json()
-);
+app.use(express.json());
 
 app.use(
   express.urlencoded({
@@ -203,63 +124,44 @@ app.use(
 );
 
 /* ================================================================
-   STATIC FILE
+   STATIC FILES
 ================================================================ */
 
 app.use(
   "/uploads",
   express.static(
-    path.join(
-      process.cwd(),
-      env.UPLOAD_DIR
-    )
+    path.join(process.cwd(), env.UPLOAD_DIR)
   )
 );
 
 /* ================================================================
-   ROOT
+   ROOT / HEALTH CHECK
 ================================================================ */
 
-app.get(
-  "/",
-  (_req, res) => {
-    res.json({
-      success: true,
-      service: "BEHRIS API",
-      status: "Running",
-      database: "Connected",
-      version: "1.0.0",
-    });
-  }
-);
+app.get("/", (_req, res) => {
+  res.json({
+    success: true,
+    service: "BEHRIS API",
+    status: "Running",
+    version: "1.0.0",
+  });
+});
 
 /* ================================================================
-   ROUTES AUTH
+   AUTH
 ================================================================ */
 
-app.use(
-  "/api/auth",
-  authRoutes
-);
+app.use("/api/auth", authRoutes);
 
 /* ================================================================
-   ROUTES REKRUTMEN
+   REKRUTMEN
 ================================================================ */
 
-app.use(
-  "/api/rekrutmen",
-  rekrutmenRoutes
-);
+app.use("/api/rekrutmen", rekrutmenRoutes);
 
-app.use(
-  "/api/profile",
-  profileRoutes
-);
+app.use("/api/profile", profileRoutes);
 
-app.use(
-  "/api/apply",
-  applyRoutes
-);
+app.use("/api/apply", applyRoutes);
 
 app.use(
   "/api/rekrutmen/candidates",
@@ -271,24 +173,13 @@ app.use(
   userMessageRoutes
 );
 
-app.use(
-  "/api/tests",
-  testRoutes
-);
+app.use("/api/tests", testRoutes);
 
-app.use(
-  "/api/candidate",
-  candidateTestRoutes
-);
+app.use("/api/candidate", candidateTestRoutes);
 
 /* ================================================================
-   HRIS
+   HRIS EMPLOYEES
 ================================================================ */
-
-// GET    /api/hris/employees
-// GET    /api/hris/employees/me
-// GET    /api/hris/employees/:id
-// PATCH  /api/hris/employees/:id
 
 app.use(
   "/api/hris/employees",
@@ -296,55 +187,22 @@ app.use(
 );
 
 /* ================================================================
-   WHATSAPP FONNTE
+   WHATSAPP
 ================================================================ */
 
-// POST /api/whatsapp/webhook?secret=...
-// GET  /api/whatsapp/messages
-// GET  /api/whatsapp/conversation/:phone
-// POST /api/whatsapp/reply
-//
-// Webhook menerima pesan masuk dari Fonnte.
-// Endpoint pesan dan balasan dilindungi autentikasi
-// serta role admin/rekrutmen admin di whatsapp.routes.ts.
-
-app.use(
-  "/api/whatsapp",
-  whatsappRoutes
-);
+app.use("/api/whatsapp", whatsappRoutes);
 
 /* ================================================================
    PRESENSI
 ================================================================ */
 
-// GET  /api/presensi/me
-// GET  /api/presensi/history
-// GET  /api/presensi/shifts
-//
-// GET  /api/presensi/face/status
-// POST /api/presensi/face/register
-//
-// POST /api/presensi/check-in
-// POST /api/presensi/check-out
-
-app.use(
-  "/api/presensi",
-  presensiRoutes
-);
+app.use("/api/presensi", presensiRoutes);
 
 /* ================================================================
    SETTINGS
 ================================================================ */
 
-// GET /api/settings/menu
-//
-// Endpoint ini menentukan menu sidebar berdasarkan
-// user yang sedang login.
-
-app.use(
-  "/api/settings",
-  settingsRoutes
-);
+app.use("/api/settings", settingsRoutes);
 
 /* ================================================================
    TEST AUTH
@@ -369,9 +227,7 @@ app.get(
 app.get(
   "/api/admin",
   authMiddleware,
-  roleMiddleware([
-    ROLES.ADMIN,
-  ]),
+  roleMiddleware([ROLES.ADMIN]),
   (_req, res) => {
     res.json({
       success: true,
@@ -381,15 +237,13 @@ app.get(
 );
 
 /* ================================================================
-   HR
+   HR / REKRUTMEN ADMIN
 ================================================================ */
 
 app.get(
   "/api/hr",
   authMiddleware,
-  roleMiddleware([
-    ROLES.REKRUTMEN_ADMIN,
-  ]),
+  roleMiddleware([ROLES.REKRUTMEN_ADMIN]),
   (_req, res) => {
     res.json({
       success: true,
@@ -399,20 +253,19 @@ app.get(
 );
 
 /* ================================================================
-   404
+   404 HANDLER
 ================================================================ */
 
-// Semua route harus didaftarkan sebelum handler 404.
-
-app.use(
-  "*",
-  (_req, res) => {
-    res.status(404).json({
-      success: false,
-      message: "Route tidak ditemukan",
-    });
-  }
-);
+// Handler 404 harus paling akhir.
+// Tidak memakai app.use("*") agar kompatibel dengan Express 5.
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: "Route tidak ditemukan",
+    path: req.originalUrl,
+    method: req.method,
+  });
+});
 
 /* ================================================================
    EXPORT APP
