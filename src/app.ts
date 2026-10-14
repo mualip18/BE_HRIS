@@ -24,27 +24,22 @@ import settingsRoutes from "./modules/settings/routes/settings.routes";
 import { ROLES } from "./core/constants/roles";
 import { env } from "./config/env";
 
-/* ================================================================
-   APP
-================================================================ */
-
 const app = express();
 
 /* ================================================================
    CORS CONFIGURATION
 ================================================================ */
 
-// Origin frontend produksi dan frontend lokal.
 const defaultAllowedOrigins = [
   "https://kariryadin.netlify.app",
   "http://localhost:5173",
+  "http://localhost:5174",
 ];
 
-// Origin tambahan dapat dikonfigurasi melalui Railway Variables.
 const configuredOrigins = (env.ALLOWED_ORIGINS || "")
   .split(",")
-  .map((origin) => origin.trim())
-  .filter((origin) => origin.length > 0);
+  .map((origin) => origin.trim().replace(/\/+$/, ""))
+  .filter(Boolean);
 
 const allowedOrigins = [
   ...new Set([
@@ -53,22 +48,23 @@ const allowedOrigins = [
   ]),
 ];
 
-console.log("CORS ALLOWED ORIGINS:", allowedOrigins);
+console.log("[CORS] Allowed origins:", allowedOrigins);
 
 const corsOptions: cors.CorsOptions = {
   origin: (origin, callback) => {
-    // Izinkan request server-to-server atau tools tanpa Origin.
+    // Request server-to-server atau tanpa Origin.
     if (!origin) {
       return callback(null, true);
     }
 
-    if (allowedOrigins.includes(origin)) {
+    const normalizedOrigin = origin.replace(/\/+$/, "");
+
+    if (allowedOrigins.includes(normalizedOrigin)) {
       return callback(null, true);
     }
 
-    console.warn("CORS BLOCKED:", origin);
+    console.warn("[CORS BLOCKED]", origin);
 
-    // Origin tidak dikenal tetap ditolak.
     return callback(null, false);
   },
 
@@ -91,17 +87,19 @@ const corsOptions: cors.CorsOptions = {
   optionsSuccessStatus: 204,
 };
 
-// Harus dipasang sebelum seluruh route API.
-// Middleware cors juga menangani preflight OPTIONS.
+// CORS harus dipasang sebelum seluruh route.
 app.use(cors(corsOptions));
 
+// Penanganan eksplisit request preflight.
+app.options("*", cors(corsOptions));
+
 /* ================================================================
-   DEBUG REQUEST
+   REQUEST LOG
 ================================================================ */
 
 app.use((req, _res, next) => {
   console.log(
-    "REQUEST:",
+    "[REQUEST]",
     req.method,
     req.originalUrl,
     "ORIGIN:",
@@ -135,11 +133,11 @@ app.use(
 );
 
 /* ================================================================
-   ROOT / HEALTH CHECK
+   HEALTH CHECK
 ================================================================ */
 
 app.get("/", (_req, res) => {
-  res.json({
+  res.status(200).json({
     success: true,
     service: "BEHRIS API",
     status: "Running",
@@ -256,8 +254,6 @@ app.get(
    404 HANDLER
 ================================================================ */
 
-// Handler 404 harus paling akhir.
-// Tidak memakai app.use("*") agar kompatibel dengan Express 5.
 app.use((req, res) => {
   res.status(404).json({
     success: false,
