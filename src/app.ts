@@ -30,12 +30,15 @@ const app = express();
    CORS CONFIGURATION
 ================================================================ */
 
+// Domain frontend yang diizinkan.
 const defaultAllowedOrigins = [
   "https://kariryadin.netlify.app",
   "http://localhost:5173",
   "http://localhost:5174",
 ];
 
+// Origin tambahan dari environment variable.
+// Pisahkan menggunakan koma jika lebih dari satu.
 const configuredOrigins = (env.ALLOWED_ORIGINS || "")
   .split(",")
   .map((origin) => origin.trim().replace(/\/+$/, ""))
@@ -52,7 +55,7 @@ console.log("[CORS] Allowed origins:", allowedOrigins);
 
 const corsOptions: cors.CorsOptions = {
   origin: (origin, callback) => {
-    // Request server-to-server atau tanpa Origin.
+    // Request server-to-server atau tanpa header Origin.
     if (!origin) {
       return callback(null, true);
     }
@@ -65,7 +68,9 @@ const corsOptions: cors.CorsOptions = {
 
     console.warn("[CORS BLOCKED]", origin);
 
-    return callback(null, false);
+    return callback(
+      new Error("Origin tidak diizinkan oleh CORS")
+    );
   },
 
   credentials: true,
@@ -87,11 +92,11 @@ const corsOptions: cors.CorsOptions = {
   optionsSuccessStatus: 204,
 };
 
-// CORS harus dipasang sebelum seluruh route.
+// HARUS sebelum seluruh route API.
 app.use(cors(corsOptions));
 
-// Penanganan eksplisit request preflight.
-app.options("*", cors(corsOptions));
+// Tidak perlu app.options("*", ...) di sini.
+// Middleware CORS global menangani preflight OPTIONS.
 
 /* ================================================================
    REQUEST LOG
@@ -262,6 +267,39 @@ app.use((req, res) => {
     method: req.method,
   });
 });
+
+/* ================================================================
+   ERROR HANDLER
+================================================================ */
+
+app.use(
+  (
+    err: any,
+    _req: express.Request,
+    res: express.Response,
+    next: express.NextFunction
+  ) => {
+    if (res.headersSent) {
+      return next(err);
+    }
+
+    if (err?.message === "Origin tidak diizinkan oleh CORS") {
+      console.error("[CORS ERROR]", err.message);
+
+      return res.status(403).json({
+        success: false,
+        message: "Origin tidak diizinkan oleh CORS",
+      });
+    }
+
+    console.error("[SERVER ERROR]", err);
+
+    return res.status(500).json({
+      success: false,
+      message: "Terjadi kesalahan pada server",
+    });
+  }
+);
 
 /* ================================================================
    EXPORT APP
