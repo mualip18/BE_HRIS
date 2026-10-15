@@ -1,12 +1,6 @@
 
 import jwt, { JwtPayload, SignOptions } from "jsonwebtoken";
 
-/**
- * JWT configuration
- * JWT_SECRET wajib tersedia di environment Railway atau .env lokal.
- * Jangan menggunakan secret default di production.
- */
-
 const getJwtSecret = (): string => {
   const secret = process.env.JWT_SECRET?.trim();
 
@@ -29,22 +23,20 @@ const getJwtSecret = (): string => {
 const JWT_EXPIRES_IN: SignOptions["expiresIn"] = "1d";
 
 export const generateToken = (payload: object): string => {
-  const secret = getJwtSecret();
-
-  return jwt.sign(payload, secret, {
+  return jwt.sign(payload, getJwtSecret(), {
     expiresIn: JWT_EXPIRES_IN,
     algorithm: "HS256",
   });
 };
 
-export const verifyToken = (token: string): JwtPayload | string => {
+export const verifyToken = (
+  token: string
+): JwtPayload | string => {
   if (!token || typeof token !== "string") {
     throw new Error("Token JWT tidak tersedia.");
   }
 
-  const secret = getJwtSecret();
-
-  return jwt.verify(token, secret, {
+  return jwt.verify(token, getJwtSecret(), {
     algorithms: ["HS256"],
   });
 };
