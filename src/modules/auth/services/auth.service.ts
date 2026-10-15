@@ -1,56 +1,59 @@
 
-import {
-  hashPassword,
-  comparePassword,
-} from "../../../core/utils/bcrypt";
-
-import {
-  verifyGoogleToken,
-} from "../../../core/utils/google";
-
-import {
-  generateToken,
-} from "../../../core/utils/jwt";
-
+import { verifyGoogleToken } from "../../../core/utils/google";
+import { generateToken } from "../../../core/utils/jwt";
 import * as repo from "../repositories/auth.repository";
 
-import {
-  generate2FASecret,
-  verify2FACode,
-} from "../../../core/utils/otp";
-
-const ROLE = {
-  ADMIN: 1,
-  REKRUTMEN_ADMIN: 2,
-  EMPLOYEE: 3,
-  PRESENSI_ADMIN: 4,
-} as const;
-
-const mapRole = (roleId: number): string => {
-  switch (Number(roleId)) {
-    case ROLE.ADMIN:
-      return "admin";
-    case ROLE.REKRUTMEN_ADMIN:
-      return "rekrutmen_admin";
-    case ROLE.EMPLOYEE:
-      return "employee";
-    case ROLE.PRESENSI_ADMIN:
-      return "presensi_admin";
-    default:
-      return "guest";
-  }
-};
+// ======================================
+// NORMALIZE EMAIL
+// ======================================
 
 const normalizeEmail = (email: unknown): string => {
   if (typeof email !== "string" || !email.trim()) {
-    throw new Error("Email wajib diisi");
+    throw new Error("Email wajib diisi.");
   }
 
   return email.trim().toLowerCase();
 };
 
-const buildAuthUser = (user: any, role: string) => ({
-  id: user.id,
+// ======================================
+// MAP ROLE
+// Role diambil dari profiles.role
+// ======================================
+
+const mapRole = (roleInput: unknown): string => {
+  if (typeof roleInput !== "string") {
+    return "guest";
+  }
+
+  switch (roleInput.trim().toLowerCase()) {
+    case "admin":
+      return "admin";
+
+    case "rekrutmen_admin":
+      return "rekrutmen_admin";
+
+    case "presensi_admin":
+      return "presensi_admin";
+
+    case "employee":
+    case "user":
+      return "employee";
+
+    default:
+      return "guest";
+  }
+};
+
+// ======================================
+// BUILD AUTH USER
+// ======================================
+
+const buildAuthUser = (
+  user: repo.ProfileAuthUser,
+  role: string
+) => ({
+  id: user.profile_id,
+  uuid: user.uuid,
   name: user.name,
   email: user.email,
   role,
@@ -59,101 +62,27 @@ const buildAuthUser = (user: any, role: string) => ({
 
 // ======================================
 // REGISTER
+// Pendaftaran publik dinonaktifkan
 // ======================================
 
-export const register = async (data: any) => {
-  const email = normalizeEmail(data?.email);
-
-  if (
-    typeof data?.name !== "string" ||
-    !data.name.trim()
-  ) {
-    throw new Error("Nama wajib diisi");
-  }
-
-  if (
-    typeof data?.password !== "string" ||
-    data.password.length < 8
-  ) {
-    throw new Error("Password minimal 8 karakter");
-  }
-
-  const existing = await repo.findUserByEmail(email);
-
-  if (existing) {
-    throw new Error("Email sudah digunakan");
-  }
-
-  const hashed = await hashPassword(data.password);
-
-  const user = await repo.createUser({
-    ...data,
-    email,
-    name: data.name.trim(),
-    password: hashed,
-  });
-
-  return {
-    success: true,
-    user,
-  };
+export const register = async (_data: any) => {
+  throw new Error(
+    "Pendaftaran akun publik dinonaktifkan. Hubungi administrator."
+  );
 };
 
 // ======================================
 // LOGIN EMAIL + PASSWORD
+// Belum tersedia di skema profiles
 // ======================================
 
 export const login = async (
-  emailInput: string,
-  password: string
+  _emailInput: string,
+  _password: string
 ) => {
-  const email = normalizeEmail(emailInput);
-
-  if (typeof password !== "string" || !password) {
-    throw new Error("Password wajib diisi");
-  }
-
-  const user = await repo.findUserByEmail(email);
-
-  if (!user) {
-    throw new Error("Email atau password salah");
-  }
-
-  if (!user.password || user.password === "GOOGLE_LOGIN") {
-    throw new Error(
-      "Akun ini menggunakan login Google"
-    );
-  }
-
-  const match = await comparePassword(
-    password,
-    user.password
+  throw new Error(
+    "Login email dan password belum tersedia. Gunakan Google login."
   );
-
-  if (!match) {
-    throw new Error("Email atau password salah");
-  }
-
-  const role = mapRole(user.role_id);
-
-  if (!user.two_factor_enabled) {
-    const data = await generate2FASecret(user.email);
-
-    await repo.save2FASecret(user.uuid, data.secret);
-
-    return {
-      success: true,
-      requires2FASetup: true,
-      qrCode: data.qrCode,
-      userUuid: user.uuid,
-    };
-  }
-
-  return {
-    success: true,
-    requiresOTP: true,
-    userUuid: user.uuid,
-  };
 };
 
 // ======================================
@@ -163,39 +92,51 @@ export const login = async (
 export const loginWithGoogle = async (
   googleToken: string
 ) => {
+  if (
+    typeof googleToken !== "string" ||
+    !googleToken.trim()
+  ) {
+    throw new Error("Token Google wajib diisi.");
+  }
+
+  // Validasi token Google dan ambil identitas pengguna.
   const googleUser = await verifyGoogleToken(googleToken);
   const email = normalizeEmail(googleUser.email);
 
+  // Akun wajib sudah terdaftar di profiles.
   let user = await repo.findUserByEmail(email);
 
   if (!user) {
-    user = await repo.createGoogleUser({
-      name: googleUser.name || "Google User",
-      email,
-      avatar: googleUser.picture || "",
-      role_id: ROLE.EMPLOYEE,
-    });
-  }
-
-  if (!user?.uuid || !user?.id) {
-    console.error(
-      "[GOOGLE LOGIN] User record lacks required identifiers"
-    );
     throw new Error(
-      "Data akun belum lengkap. Hubungi administrator."
+      "Email Google belum terdaftar di HRIS. Hubungi administrator."
     );
   }
 
-  const role = mapRole(user.role_id);
+  // Jangan izinkan akun nonaktif masuk.
+  const status = user.status?.trim().toLowerCase();
+
+  if (status !== "active" && status !== "aktif") {
+    throw new Error(
+      "Akun HRIS tidak aktif. Hubungi administrator."
+    );
+  }
+
+  // Pastikan UUID tersedia untuk JWT.
+  if (!user.uuid) {
+    const uuid = await repo.ensureProfileUuid(user.profile_id);
+    user = { ...user, uuid };
+  }
+
+  const role = mapRole(user.role_name);
 
   if (role === "guest") {
     throw new Error(
-      "Role akun belum dikonfigurasi. Hubungi administrator."
+      "Role akun belum dikenali. Hubungi administrator."
     );
   }
 
   const token = generateToken({
-    id: String(user.uuid),
+    id: user.uuid,
     role,
   });
 
@@ -208,59 +149,14 @@ export const loginWithGoogle = async (
 
 // ======================================
 // VERIFY OTP
+// Belum tersedia di skema database
 // ======================================
 
 export const verifyOTP = async (
-  userUuid: string,
-  otp: string
+  _userUuid: string,
+  _otp: string
 ) => {
-  if (
-    typeof userUuid !== "string" ||
-    !userUuid.trim()
-  ) {
-    throw new Error("User UUID wajib diisi");
-  }
-
-  if (
-    typeof otp !== "string" ||
-    !/^\d{6}$/.test(otp)
-  ) {
-    throw new Error("Format OTP tidak valid");
-  }
-
-  const user = await repo.findUserByUuid(userUuid);
-
-  if (!user) {
-    throw new Error("User tidak ditemukan");
-  }
-
-  if (!user.two_factor_secret) {
-    throw new Error("2FA belum dikonfigurasi");
-  }
-
-  const verified = verify2FACode(
-    user.two_factor_secret,
-    otp
+  throw new Error(
+    "Verifikasi OTP belum tersedia pada konfigurasi database saat ini."
   );
-
-  if (!verified) {
-    throw new Error("OTP tidak valid");
-  }
-
-  if (!user.two_factor_enabled) {
-    await repo.enable2FA(user.uuid);
-  }
-
-  const role = mapRole(user.role_id);
-
-  const token = generateToken({
-    id: String(user.uuid),
-    role,
-  });
-
-  return {
-    success: true,
-    user: buildAuthUser(user, role),
-    token,
-  };
 };
