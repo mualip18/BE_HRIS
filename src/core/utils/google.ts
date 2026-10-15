@@ -1,3 +1,4 @@
+
 import axios from "axios";
 
 export interface GoogleUserPayload {
@@ -6,40 +7,62 @@ export interface GoogleUserPayload {
   picture?: string;
 }
 
+interface GoogleUserInfoResponse {
+  email?: string;
+  email_verified?: boolean;
+  name?: string;
+  picture?: string;
+}
+
 export const verifyGoogleToken = async (
   accessToken: string
 ): Promise<GoogleUserPayload> => {
-  try {
-    console.log("========== GOOGLE VERIFY ==========");
-    console.log("ACCESS TOKEN:", accessToken.substring(0, 30) + "...");
+  if (!accessToken || typeof accessToken !== "string") {
+    throw new Error("Google access token is required");
+  }
 
-    const { data } = await axios.get(
+  try {
+    const { data } = await axios.get<GoogleUserInfoResponse>(
       "https://www.googleapis.com/oauth2/v3/userinfo",
       {
         headers: {
           Authorization: `Bearer ${accessToken}`,
         },
+        timeout: 10000,
       }
     );
-
-    console.log("GOOGLE USER:", data);
 
     if (!data.email) {
       throw new Error("Google email not found");
     }
 
+    if (data.email_verified !== true) {
+      throw new Error("Email not verified by Google");
+    }
+
     return {
-      email: data.email,
-      name: data.name || "Google User",
+      email: data.email.trim().toLowerCase(),
+      name: data.name?.trim() || "Google User",
       picture: data.picture || "",
     };
-  } catch (err: any) {
-    console.error(err.response?.data || err);
+  } catch (error: unknown) {
+    if (axios.isAxiosError(error)) {
+      console.error("[GOOGLE VERIFY ERROR]", {
+        status: error.response?.status,
+        message: error.message,
+      });
 
-    throw new Error(
-      err.response?.data?.error_description ||
-      err.message ||
-      "Google access token invalid"
-    );
+      throw new Error(
+        error.response?.status === 401
+          ? "Google token verification failed"
+          : "Unable to verify Google account"
+      );
+    }
+
+    if (error instanceof Error) {
+      throw error;
+    }
+
+    throw new Error("Google token verification failed");
   }
 };

@@ -1,3 +1,4 @@
+
 import {
   hashPassword,
   comparePassword,
@@ -18,328 +19,192 @@ import {
   verify2FACode,
 } from "../../../core/utils/otp";
 
-
-// ======================================
-// ROLE CONSTANT
-// ======================================
-
 const ROLE = {
   ADMIN: 1,
   REKRUTMEN_ADMIN: 2,
   EMPLOYEE: 3,
   PRESENSI_ADMIN: 4,
-};
+} as const;
 
-
-// ======================================
-// ROLE MAPPING
-// ======================================
-
-const mapRole = (
-  role_id: number
-) => {
-
-  switch (role_id) {
-
+const mapRole = (roleId: number): string => {
+  switch (Number(roleId)) {
     case ROLE.ADMIN:
       return "admin";
-
     case ROLE.REKRUTMEN_ADMIN:
       return "rekrutmen_admin";
-
     case ROLE.EMPLOYEE:
       return "employee";
-
     case ROLE.PRESENSI_ADMIN:
       return "presensi_admin";
-
     default:
       return "guest";
   }
-
 };
 
+const normalizeEmail = (email: unknown): string => {
+  if (typeof email !== "string" || !email.trim()) {
+    throw new Error("Email wajib diisi");
+  }
+
+  return email.trim().toLowerCase();
+};
+
+const buildAuthUser = (user: any, role: string) => ({
+  id: user.id,
+  name: user.name,
+  email: user.email,
+  role,
+  avatar: user.avatar || null,
+});
 
 // ======================================
 // REGISTER
 // ======================================
 
-export const register = async (
-  data: any
-) => {
+export const register = async (data: any) => {
+  const email = normalizeEmail(data?.email);
 
-  const existing =
-    await repo.findUserByEmail(
-      data.email
-    );
-
-  if (existing) {
-    throw new Error(
-      "Email already used"
-    );
+  if (
+    typeof data?.name !== "string" ||
+    !data.name.trim()
+  ) {
+    throw new Error("Nama wajib diisi");
   }
 
-  const hashed =
-    await hashPassword(
-      data.password
-    );
+  if (
+    typeof data?.password !== "string" ||
+    data.password.length < 8
+  ) {
+    throw new Error("Password minimal 8 karakter");
+  }
 
-  const user =
-    await repo.createUser({
-      ...data,
-      password: hashed,
-    });
+  const existing = await repo.findUserByEmail(email);
 
-  return user;
+  if (existing) {
+    throw new Error("Email sudah digunakan");
+  }
 
+  const hashed = await hashPassword(data.password);
+
+  const user = await repo.createUser({
+    ...data,
+    email,
+    name: data.name.trim(),
+    password: hashed,
+  });
+
+  return {
+    success: true,
+    user,
+  };
 };
 
-
 // ======================================
-// LOGIN
+// LOGIN EMAIL + PASSWORD
 // ======================================
 
 export const login = async (
-  email: string,
+  emailInput: string,
   password: string
 ) => {
+  const email = normalizeEmail(emailInput);
 
-  const user =
-    await repo.findUserByEmail(
-      email
-    );
+  if (typeof password !== "string" || !password) {
+    throw new Error("Password wajib diisi");
+  }
+
+  const user = await repo.findUserByEmail(email);
 
   if (!user) {
+    throw new Error("Email atau password salah");
+  }
+
+  if (!user.password || user.password === "GOOGLE_LOGIN") {
     throw new Error(
-      "User not found"
+      "Akun ini menggunakan login Google"
     );
   }
 
-  const match =
-    await comparePassword(
-      password,
-      user.password
-    );
+  const match = await comparePassword(
+    password,
+    user.password
+  );
 
   if (!match) {
-    throw new Error(
-      "Wrong password"
-    );
+    throw new Error("Email atau password salah");
   }
 
+  const role = mapRole(user.role_id);
 
-  const role =
-    mapRole(
-      user.role_id
-    );
+  if (!user.two_factor_enabled) {
+    const data = await generate2FASecret(user.email);
 
-
-  // ================================
-  // DEBUG ROLE
-  // ================================
-
-  console.log(
-    "=== LOGIN ROLE DEBUG ==="
-  );
-
-  console.log({
-    userId: user.id,
-    email: user.email,
-    roleId: user.role_id,
-    mappedRole: role,
-  });
-
-
-  // ================================
-  // BELUM SETUP 2FA
-  // ================================
-
-  if (
-    !user.two_factor_enabled
-  ) {
-
-    const data =
-      await generate2FASecret(
-        user.email
-      );
-
-    await repo.save2FASecret(
-      user.uuid,
-      data.secret
-    );
-
-    console.log(
-      "LOGIN UUID:",
-      user.uuid
-    );
+    await repo.save2FASecret(user.uuid, data.secret);
 
     return {
-
       success: true,
-
       requires2FASetup: true,
-
-      qrCode:
-        data.qrCode,
-
-      userUuid:
-        user.uuid,
-
+      qrCode: data.qrCode,
+      userUuid: user.uuid,
     };
-
   }
 
-
-  // ================================
-  // SUDAH SETUP 2FA
-  // ================================
-
-  console.log(
-    "LOGIN UUID:",
-    user.uuid
-  );
-
   return {
-
     success: true,
-
     requiresOTP: true,
-
-    userUuid:
-      user.uuid,
-
+    userUuid: user.uuid,
   };
-
 };
 
-
 // ======================================
-// LOGIN WITH GOOGLE
+// LOGIN GOOGLE
 // ======================================
 
 export const loginWithGoogle = async (
   googleToken: string
 ) => {
+  const googleUser = await verifyGoogleToken(googleToken);
+  const email = normalizeEmail(googleUser.email);
 
-  const googlePayload =
-    await verifyGoogleToken(
-      googleToken
-    );
-
-  if (
-    !googlePayload.email
-  ) {
-    throw new Error(
-      "Google email not found"
-    );
-  }
-
-
-  let user =
-    await repo.findUserByEmail(
-      googlePayload.email
-    );
-
-
-  // ================================
-  // AUTO CREATE USER GOOGLE
-  // ================================
+  let user = await repo.findUserByEmail(email);
 
   if (!user) {
-
-    user =
-      await repo.createGoogleUser({
-
-        name:
-          googlePayload.name ||
-          "Google User",
-
-        email:
-          googlePayload.email,
-
-        avatar:
-          googlePayload.picture,
-
-        // DEFAULT EMPLOYEE
-        role_id:
-          ROLE.EMPLOYEE,
-
-      });
-
+    user = await repo.createGoogleUser({
+      name: googleUser.name || "Google User",
+      email,
+      avatar: googleUser.picture || "",
+      role_id: ROLE.EMPLOYEE,
+    });
   }
 
-
-  const role =
-    mapRole(
-      user.role_id
+  if (!user?.uuid || !user?.id) {
+    console.error(
+      "[GOOGLE LOGIN] User record lacks required identifiers"
     );
+    throw new Error(
+      "Data akun belum lengkap. Hubungi administrator."
+    );
+  }
 
+  const role = mapRole(user.role_id);
 
-  // ================================
-  // DEBUG ROLE
-  // ================================
+  if (role === "guest") {
+    throw new Error(
+      "Role akun belum dikonfigurasi. Hubungi administrator."
+    );
+  }
 
-  console.log(
-    "=== GOOGLE ROLE DEBUG ==="
-  );
-
-  console.log({
-
-    userId:
-      user.id,
-
-    email:
-      user.email,
-
-    roleId:
-      user.role_id,
-
-    mappedRole:
-      role,
-
+  const token = generateToken({
+    id: String(user.uuid),
+    role,
   });
 
-
-  const token =
-    generateToken({
-
-      id:
-        user.uuid,
-
-      role,
-
-    });
-
-
   return {
-
     success: true,
-
-    user: {
-
-      id:
-        user.id,
-
-      name:
-        user.name,
-
-      email:
-        user.email,
-
-      role,
-
-      avatar:
-        user.avatar ||
-        null,
-
-    },
-
+    user: buildAuthUser(user, role),
     token,
-
   };
-
 };
-
 
 // ======================================
 // VERIFY OTP
@@ -349,132 +214,53 @@ export const verifyOTP = async (
   userUuid: string,
   otp: string
 ) => {
-
-  const user =
-    await repo.findUserByUuid(
-      userUuid
-    );
-
-
-  if (!user) {
-
-    throw new Error(
-      "User tidak ditemukan"
-    );
-
+  if (
+    typeof userUuid !== "string" ||
+    !userUuid.trim()
+  ) {
+    throw new Error("User UUID wajib diisi");
   }
-
-
-  // ================================
-  // VERIFY OTP
-  // ================================
-
-  const verified =
-    verify2FACode(
-      user.two_factor_secret,
-      otp
-    );
-
-
-  if (!verified) {
-
-    throw new Error(
-      "OTP tidak valid"
-    );
-
-  }
-
-
-  // ================================
-  // ENABLE 2FA
-  // ================================
 
   if (
-    !user.two_factor_enabled
+    typeof otp !== "string" ||
+    !/^\d{6}$/.test(otp)
   ) {
-
-    await repo.enable2FA(
-      user.uuid
-    );
-
+    throw new Error("Format OTP tidak valid");
   }
 
+  const user = await repo.findUserByUuid(userUuid);
 
-  // ================================
-  // ROLE
-  // ================================
+  if (!user) {
+    throw new Error("User tidak ditemukan");
+  }
 
-  const role =
-    mapRole(
-      user.role_id
-    );
+  if (!user.two_factor_secret) {
+    throw new Error("2FA belum dikonfigurasi");
+  }
 
-
-  // ================================
-  // DEBUG ROLE
-  // ================================
-
-  console.log(
-    "=== OTP ROLE DEBUG ==="
+  const verified = verify2FACode(
+    user.two_factor_secret,
+    otp
   );
 
-  console.log({
+  if (!verified) {
+    throw new Error("OTP tidak valid");
+  }
 
-    userId:
-      user.id,
+  if (!user.two_factor_enabled) {
+    await repo.enable2FA(user.uuid);
+  }
 
-    email:
-      user.email,
+  const role = mapRole(user.role_id);
 
-    roleId:
-      user.role_id,
-
-    mappedRole:
-      role,
-
+  const token = generateToken({
+    id: String(user.uuid),
+    role,
   });
 
-
-  // ================================
-  // GENERATE TOKEN
-  // ================================
-
-  const token =
-    generateToken({
-
-      id:
-        user.uuid,
-
-      role,
-
-    });
-
-
-  // ================================
-  // RESPONSE
-  // ================================
-
   return {
-
     success: true,
-
-    user: {
-
-      id:
-        user.id,
-
-      name:
-        user.name,
-
-      email:
-        user.email,
-
-      role,
-
-    },
-
+    user: buildAuthUser(user, role),
     token,
-
   };
-
 };
