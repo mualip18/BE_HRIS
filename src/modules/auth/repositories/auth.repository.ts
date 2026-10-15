@@ -1,50 +1,68 @@
 
 import db from "../../../config/db";
 
+// ======================================
+// TYPES
+// ======================================
+
 export interface ProfileAuthUser {
   profile_id: number;
   uuid: string | null;
   name: string;
   email: string;
   avatar: string | null;
-  role_name: string;
-  status: string;
+  role_name: string | null;
+  status: string | null;
 }
 
-const PROFILE_AUTH_COLUMNS = `
-  id AS profile_id,
-  user_id AS uuid,
-  nama AS name,
-  email,
-  avatar,
-  role AS role_name,
-  status
-`;
+// ======================================
+// FIND USER BY EMAIL
+// Menggunakan tabel public.profiles
+// ======================================
 
-// Cari akun berdasarkan email pada tabel profiles.
 export const findUserByEmail = async (
   email: string
 ): Promise<ProfileAuthUser | undefined> => {
+  const normalizedEmail = email.trim().toLowerCase();
+
   const result = await db.query(
     `
-      SELECT ${PROFILE_AUTH_COLUMNS}
+      SELECT
+        id AS profile_id,
+        user_id AS uuid,
+        nama AS name,
+        email,
+        avatar,
+        role AS role_name,
+        status
       FROM public.profiles
       WHERE LOWER(TRIM(email)) = $1
       LIMIT 1
     `,
-    [email.trim().toLowerCase()]
+    [normalizedEmail]
   );
 
   return result.rows[0];
 };
 
-// Cari akun berdasarkan UUID autentikasi.
+// ======================================
+// FIND USER BY UUID
+// Menggunakan profiles.user_id
+// ======================================
+
 export const findUserByUuid = async (
   uuid: string
 ): Promise<ProfileAuthUser | undefined> => {
   const result = await db.query(
     `
-      SELECT ${PROFILE_AUTH_COLUMNS}
+      SELECT
+        id AS profile_id,
+        user_id AS uuid,
+        nama AS name,
+        email,
+        avatar,
+        role AS role_name,
+        status
       FROM public.profiles
       WHERE user_id = $1::uuid
       LIMIT 1
@@ -55,16 +73,21 @@ export const findUserByUuid = async (
   return result.rows[0];
 };
 
-// Profil lama yang belum memiliki user_id mendapatkan UUID
-// hanya ketika akun tersebut benar-benar ditemukan berdasarkan email.
+// ======================================
+// ENSURE PROFILE UUID
+// Membuat UUID untuk profil lama
+// yang user_id-nya masih NULL
+// ======================================
+
 export const ensureProfileUuid = async (
   profileId: number
 ): Promise<string> => {
-  const updated = await db.query(
+  const result = await db.query(
     `
       UPDATE public.profiles
-      SET user_id = gen_random_uuid(),
-          updated_at = NOW()
+      SET
+        user_id = gen_random_uuid(),
+        updated_at = NOW()
       WHERE id = $1
         AND user_id IS NULL
       RETURNING user_id
@@ -72,11 +95,12 @@ export const ensureProfileUuid = async (
     [profileId]
   );
 
-  if (updated.rows[0]?.user_id) {
-    return updated.rows[0].user_id;
+  if (result.rows[0]?.user_id) {
+    return result.rows[0].user_id;
   }
 
-  // Menangani kemungkinan UUID sudah dibuat oleh proses lain.
+  // Jika UUID sudah dibuat proses lain,
+  // ambil UUID yang tersimpan.
   const existing = await db.query(
     `
       SELECT user_id
@@ -91,19 +115,31 @@ export const ensureProfileUuid = async (
 
   if (!uuid) {
     throw new Error(
-      "UUID akun tidak dapat dibuat. Hubungi administrator."
+      "UUID akun tidak tersedia. Hubungi administrator."
     );
   }
 
   return uuid;
 };
 
-// Pembuatan akun publik tidak diaktifkan.
-export const createUser = async (_data: any): Promise<never> => {
+// ======================================
+// CREATE USER
+// Registrasi publik dinonaktifkan
+// ======================================
+
+export const createUser = async (
+  _data: any
+): Promise<never> => {
   throw new Error(
-    "Pembuatan akun publik dinonaktifkan. Hubungi administrator."
+    "Pendaftaran akun publik dinonaktifkan. Hubungi administrator."
   );
 };
+
+// ======================================
+// CREATE GOOGLE USER
+// Akun harus dibuat oleh administrator
+// dan sudah terdaftar di profiles.
+// ======================================
 
 export const createGoogleUser = async (
   _data: {
@@ -114,37 +150,53 @@ export const createGoogleUser = async (
   }
 ): Promise<never> => {
   throw new Error(
-    "Akun Google harus terdaftar di profiles terlebih dahulu."
+    "Akun Google belum terdaftar. Hubungi administrator."
   );
 };
 
-// Tabel profiles belum memiliki kolom 2FA.
+// ======================================
+// SAVE 2FA SECRET
+// Belum didukung oleh skema profiles
+// ======================================
+
 export const save2FASecret = async (
   _userUuid: string,
   _secret: string
 ): Promise<never> => {
   throw new Error(
-    "2FA belum tersedia pada skema autentikasi database saat ini."
+    "Konfigurasi 2FA belum tersedia pada database."
   );
 };
+
+// ======================================
+// ENABLE 2FA
+// Belum didukung oleh skema profiles
+// ======================================
 
 export const enable2FA = async (
   _userUuid: string
 ): Promise<never> => {
   throw new Error(
-    "2FA belum tersedia pada skema autentikasi database saat ini."
+    "Fitur 2FA belum tersedia pada database."
   );
 };
 
-export const findRoleByName = async (name: string) => {
+// ======================================
+// FIND ROLE BY NAME
+// Menggunakan tabel public.roles
+// ======================================
+
+export const findRoleByName = async (
+  name: string
+): Promise<{ id: number; name: string } | undefined> => {
   const result = await db.query(
     `
       SELECT id, name
       FROM public.roles
-      WHERE name = $1
+      WHERE LOWER(name) = LOWER($1)
       LIMIT 1
     `,
-    [name]
+    [name.trim()]
   );
 
   return result.rows[0];
